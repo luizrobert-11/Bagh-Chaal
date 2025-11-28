@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bagh Chaal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              tiger: '#ef4444', // red-500
+              goat: '#f3f4f6', // gray-100
+              board: '#d97706', // amber-600
+              boardDark: '#78350f', // amber-900
+            },
+            fontFamily: {
+              sans: ['Poppins', 'Inter', 'sans-serif'],
+            },
+            animation: {
+              'glow': 'glow 2s ease-in-out infinite alternate',
+              'fade-in': 'fadeIn 1s ease-out forwards',
+            },
+            keyframes: {
+              glow: {
+                '0%': { textShadow: '0 0 10px #22c55e, 0 0 20px #22c55e' },
+                '100%': { textShadow: '0 0 20px #4ade80, 0 0 30px #4ade80' },
+              },
+              fadeIn: {
+                '0%': { opacity: '0' },
+                '100%': { opacity: '1' },
+              }
+            }
+          },
+        },
+      };
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Poppins', sans-serif;
+        overscroll-behavior: none;
+      }
+      .text-stroke {
+        -webkit-text-stroke: 1px black;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+</head>
+  <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
+    <div id="root"></div>
+  </body>
+</html>
