@@ -5,6 +5,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
+      // When deploying to GitHub Pages for a repo user site under
+      // https://<user>.github.io/Bagh-Chaal/ we need the correct base.
+      base: '/Bagh-Chaal/',
       server: {
         port: 3000,
         host: '0.0.0.0',
