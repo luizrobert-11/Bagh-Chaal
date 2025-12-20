@@ -73,6 +73,15 @@
  ## Acknowledgements
 
 - Inspired by the traditional board game Bagh Chaal.
+ 
+ ## Screenshots
+
+Here are a couple of in-game screenshots to give a quick preview of the UI and board:
+
+<div align="center">
+   <img src="screenshots/baghchall1.png" alt="Bagh Chaal screenshot 1" width="600" style="margin:8px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.12)" />
+   <img src="screenshots/baghchall2.png" alt="Bagh Chaal screenshot 2" width="600" style="margin:8px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.12)" />
+</div>
 <div align="center">
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
