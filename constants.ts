@@ -48,7 +48,6 @@ export const createInitialBoard = (): CellContent[][] => {
 };
 
 export const checkTigerTrapWin = (board: CellContent[][]): boolean => {
-  // Goats win if all tigers have NO valid moves (including captures)
   let tigersCount = 0;
   let trappedTigers = 0;
 
@@ -61,18 +60,15 @@ export const checkTigerTrapWin = (board: CellContent[][]): boolean => {
         let canMove = false;
 
         for (const n of neighbors) {
-          // 1. Can move to empty adjacent?
           if (board[n.r][n.c] === null) {
             canMove = true;
             break;
           }
-          // 2. Can jump over a goat?
           if (board[n.r][n.c] === 'GOAT') {
             const dr = n.r - r;
             const dc = n.c - c;
             const jumpR = n.r + dr;
             const jumpC = n.c + dc;
-            
             if (
               jumpR >= 0 && jumpR < BOARD_SIZE &&
               jumpC >= 0 && jumpC < BOARD_SIZE &&
@@ -83,22 +79,15 @@ export const checkTigerTrapWin = (board: CellContent[][]): boolean => {
             }
           }
         }
-
-        if (!canMove) {
-          trappedTigers++;
-        }
+        if (!canMove) trappedTigers++;
       }
     }
   }
-
-  // If all tigers on board are trapped, Goats win.
   return tigersCount > 0 && trappedTigers === tigersCount;
 };
 
-// Determine how many captures Tigers need to win based on difficulty and player role
 export const getWinCaptureCount = (difficulty: Difficulty, playerRole: Player, gameMode: GameMode): number => {
   if (gameMode === 'PVP') return 5;
-
   if (playerRole === 'GOAT') {
     switch (difficulty) {
       case 'HARD': return 3;
@@ -113,8 +102,6 @@ export const getWinCaptureCount = (difficulty: Difficulty, playerRole: Player, g
     }
   }
 };
-
-// --- RANKING SYSTEM ---
 
 export interface RankInfo {
   id: Rank;
@@ -132,7 +119,7 @@ export const RANKS: RankInfo[] = [
   { id: 'MASTER_I', name: 'Master I', maxExp: 3500, color: '#ff4500' },
   { id: 'MASTER_II', name: 'Master II', maxExp: 5000, color: '#ff0000' },
   { id: 'MASTER_III', name: 'Master III', maxExp: 7000, color: '#8b0000' },
-  { id: 'PROFESSIONAL', name: 'Professional', maxExp: 10000, color: '#1a1a1a' }, // Final level cap?
+  { id: 'PROFESSIONAL', name: 'Professional', maxExp: 10000, color: '#1a1a1a' },
 ];
 
 export const getNextRank = (current: Rank): Rank | null => {
@@ -145,12 +132,24 @@ export const getRankInfo = (rank: Rank): RankInfo => {
   return RANKS.find(r => r.id === rank) || RANKS[0];
 };
 
-export const calculateExpGain = (difficulty: Difficulty, result: 'WIN' | 'LOSS'): number => {
-  if (result === 'LOSS') return 10;
-  switch (difficulty) {
-    case 'EASY': return 25;
-    case 'MEDIUM': return 50;
-    case 'HARD': return 100;
+export const calculateExpGain = (difficulty: Difficulty, result: 'WIN' | 'LOSS', playerRole: Player): number => {
+  if (result === 'LOSS') return 0;
+  
+  // Sheep (GOAT)
+  if (playerRole === 'GOAT') {
+    switch (difficulty) {
+      case 'EASY': return 3;
+      case 'MEDIUM': return 5;
+      case 'HARD': return 10;
+    }
+  } 
+  // Tiger
+  else {
+    switch (difficulty) {
+      case 'EASY': return 1;
+      case 'MEDIUM': return 3;
+      case 'HARD': return 6;
+    }
   }
 };
 
@@ -159,5 +158,74 @@ export const getUndoLimit = (difficulty: Difficulty): number => {
     case 'EASY': return 5;
     case 'MEDIUM': return 3;
     case 'HARD': return 1;
+  }
+};
+
+// --- SOUND SYNTHESIS UTILITIES ---
+
+let audioCtx: AudioContext | null = null;
+
+const getAudioCtx = () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  return audioCtx;
+};
+
+export const playSound = (type: 'place' | 'capture' | 'win' | 'lose', isMuted: boolean) => {
+  if (isMuted) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  
+  if (type === 'place') {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(440, now);
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.05);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(now + 0.1);
+  } else if (type === 'capture') {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(110, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(now + 0.2);
+  } else if (type === 'win') {
+    [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.1);
+      gain.gain.setValueAtTime(0, now + i * 0.1);
+      gain.gain.linearRampToValueAtTime(0.1, now + i * 0.1 + 0.05);
+      gain.gain.linearRampToValueAtTime(0, now + i * 0.1 + 0.3);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.1);
+      osc.stop(now + i * 0.1 + 0.3);
+    });
+  } else if (type === 'lose') {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.linearRampToValueAtTime(110, now + 0.5);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.linearRampToValueAtTime(0, now + 0.5);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(now + 0.5);
   }
 };

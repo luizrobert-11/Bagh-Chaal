@@ -9,8 +9,10 @@ import { RANKS, getRankInfo, getNextRank } from './constants';
 export default function App() {
   const [view, setView] = useState<View>('LOADING');
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isMuted, setIsMuted] = useState(() => {
+    return localStorage.getItem('bc_muted') === 'true';
+  });
   
-  // Player Stats Persistence
   const [playerStats, setPlayerStats] = useState<PlayerStats>(() => {
     const saved = localStorage.getItem('bc_stats');
     if (saved) {
@@ -48,7 +50,12 @@ export default function App() {
     localStorage.setItem('bc_stats', JSON.stringify(playerStats));
   }, [playerStats]);
 
+  useEffect(() => {
+    localStorage.setItem('bc_muted', String(isMuted));
+  }, [isMuted]);
+
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
+  const toggleMute = () => setIsMuted(!isMuted);
 
   const handlePlay = (config: GameConfig) => {
     setGameConfig(config);
@@ -61,16 +68,13 @@ export default function App() {
       let newRank: Rank = prev.rank;
       let rankInfo = getRankInfo(newRank);
       
-      // Level Up Logic
       while (newExp >= rankInfo.maxExp) {
         const nextRank = getNextRank(newRank);
         if (nextRank) {
-          // Reset EXP to 0 for next rank as requested
           newExp = 0; 
           newRank = nextRank;
           rankInfo = getRankInfo(newRank);
         } else {
-          // Cap at max
           newExp = rankInfo.maxExp;
           break;
         }
@@ -90,6 +94,8 @@ export default function App() {
           onPlay={handlePlay} 
           isDarkMode={isDarkMode}
           toggleTheme={toggleTheme}
+          isMuted={isMuted}
+          toggleMute={toggleMute}
           stats={playerStats}
         />
       )}
@@ -99,6 +105,7 @@ export default function App() {
           config={gameConfig}
           onBack={() => setView('MENU')}
           onGameEnd={handleUpdateStats}
+          isMuted={isMuted}
         />
       )}
 

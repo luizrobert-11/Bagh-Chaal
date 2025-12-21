@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GameState, Position, Player, TOTAL_GOATS, BOARD_SIZE, GameConfig, GameHistorySnapshot } from '../types';
-import { createInitialBoard, getValidNeighbors, checkTigerTrapWin, getWinCaptureCount, calculateExpGain, getUndoLimit } from '../constants';
+import { createInitialBoard, getValidNeighbors, checkTigerTrapWin, getWinCaptureCount, calculateExpGain, getUndoLimit, playSound } from '../constants';
 import { getBestMove } from '../ai';
 import Board from './Board';
 
@@ -9,9 +9,10 @@ interface GameProps {
   onBack: () => void;
   config: GameConfig;
   onGameEnd: (exp: number) => void;
+  isMuted: boolean;
 }
 
-const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
+const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd, isMuted }) => {
   const [gameState, setGameState] = useState<GameState>({
     board: createInitialBoard(),
     turn: 'GOAT',
@@ -20,7 +21,7 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
     winner: null,
     phase: 'PLACEMENT',
     selectedPiece: null,
-    message: config.gameMode === 'PVP' ? 'Place a Goat to start' : 'Place a Goat to start',
+    message: 'Place a Goat to start',
     history: [],
     undoCount: getUndoLimit(config.difficulty),
   });
@@ -42,15 +43,7 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
         const move = await getBestMove(board, turn, phase, config.difficulty, goatsCaptured);
         
         if (move) {
-            if (move.from === null) {
-                // Placement
-                handleMoveExecution(null, move.to);
-            } else {
-                // Movement
-                handleMoveExecution(move.from, move.to);
-            }
-        } else {
-            console.warn("AI has no moves");
+            handleMoveExecution(move.from, move.to);
         }
         setIsAiThinking(false);
       };
@@ -60,10 +53,15 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
 
   // Handle Game End EXP Awarding
   useEffect(() => {
-    if (winner && config.gameMode === 'AI') {
-        const isWin = winner === config.playerRole;
-        const exp = calculateExpGain(config.difficulty, isWin ? 'WIN' : 'LOSS');
-        onGameEnd(exp);
+    if (winner) {
+        if (config.gameMode === 'AI') {
+            const isWin = winner === config.playerRole;
+            const exp = calculateExpGain(config.difficulty, isWin ? 'WIN' : 'LOSS', config.playerRole);
+            onGameEnd(exp);
+            playSound(isWin ? 'win' : 'lose', isMuted);
+        } else {
+            playSound('win', isMuted);
+        }
     }
   }, [winner]);
 
@@ -83,11 +81,9 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
       }
     } else if (piece === 'TIGER') {
       for (const n of neighbors) {
-        // 1. Walk
         if (board[n.r][n.c] === null) {
           moves.push(n);
         } 
-        // 2. Capture Jump
         else if (board[n.r][n.c] === 'GOAT') {
           const dr = n.r - pos.r;
           const dc = n.c - pos.c;
@@ -126,7 +122,7 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
       setGameState(prev => ({
         ...prev,
         selectedPiece: { r, c },
-        message: 'Choose a destination'
+        message: 'Choose destination'
       }));
       return;
     }
@@ -138,20 +134,14 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
       if (isMoveValid) {
         handleMoveExecution(selectedPiece, { r, c });
       } else {
-        setGameState(prev => ({ ...prev, selectedPiece: null, message: 'Invalid Move' }));
+        setGameState(prev => ({ ...prev, selectedPiece: null, message: 'Invalid position' }));
       }
     }
   };
 
   const handleUndo = () => {
     if (history.length === 0 || undoCount <= 0) return;
-
     const lastState = history[history.length - 1];
-    
-    // In AI mode, we'd theoretically need to undo 2 moves (AI + Player), 
-    // but the prompt specifically asked for this feature "when 2 player are playing".
-    // So we will implement single step undo for PVP.
-    
     setGameState(prev => ({
       ...prev,
       board: lastState.board,
@@ -162,14 +152,13 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
       history: prev.history.slice(0, -1),
       undoCount: prev.undoCount - 1,
       selectedPiece: null,
-      message: 'Move Reversed'
+      message: 'Undo successful'
     }));
   };
 
   const handleMoveExecution = (from: Position | null, to: Position) => {
-    // 1. Save History Snapshot before modifying state
     const historySnapshot: GameHistorySnapshot = {
-        board: board.map(r => [...r]), // Deep copy board
+        board: board.map(r => [...r]),
         turn,
         goatsPlaced,
         goatsCaptured,
@@ -177,14 +166,12 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
     };
 
     const newBoard = board.map(row => [...row]);
-    
     let currentPiece = turn;
     let captured = false;
 
     if (from) {
         currentPiece = newBoard[from.r][from.c] as Player;
         newBoard[from.r][from.c] = null;
-
         if (currentPiece === 'TIGER') {
             const dr = Math.abs(to.r - from.r);
             const dc = Math.abs(to.c - from.c);
@@ -203,6 +190,13 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
 
     newBoard[to.r][to.c] = currentPiece;
 
+    // SFX
+    if (captured) {
+        playSound('capture', isMuted);
+    } else {
+        playSound('place', isMuted);
+    }
+
     let newGoatsPlaced = goatsPlaced;
     if (phase === 'PLACEMENT' && turn === 'GOAT') {
         newGoatsPlaced++;
@@ -214,36 +208,20 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
 
     if (newGoatsCaptured >= winCaptureCount) {
         newWinner = 'TIGER';
-        newMessage = `Tigers Win! ${newGoatsCaptured} Goats Eaten.`;
-    }
-
-    if (!newWinner && checkTigerTrapWin(newBoard)) {
+        newMessage = `Tigers Win! ${newGoatsCaptured} eaten.`;
+    } else if (checkTigerTrapWin(newBoard)) {
         newWinner = 'GOAT';
-        newMessage = 'Goats Win! All Tigers Trapped.';
+        newMessage = 'Goats Win! Tigers trapped.';
     }
 
-    let nextPhase = phase;
-    if (newGoatsPlaced >= TOTAL_GOATS) {
-        nextPhase = 'MOVEMENT';
-    }
-
+    const nextPhase = newGoatsPlaced >= TOTAL_GOATS ? 'MOVEMENT' : 'PLACEMENT';
     const nextTurn = turn === 'GOAT' ? 'TIGER' : 'GOAT';
 
     if (!newWinner) {
         if (config.gameMode === 'PVP') {
-             newMessage = nextTurn === 'GOAT' ? "Goat's Turn" : "Tiger's Turn";
-             if (nextTurn === 'GOAT' && nextPhase === 'PLACEMENT') {
-                 newMessage += ` (Place ${newGoatsPlaced + 1}/${TOTAL_GOATS})`;
-             }
+             newMessage = nextTurn === 'GOAT' ? "Sheep's Turn" : "Tiger's Turn";
         } else {
-            if (nextTurn === config.playerRole) {
-                newMessage = "Your Turn";
-            } else {
-                newMessage = "AI Thinking...";
-            }
-            if (nextTurn === 'GOAT' && nextPhase === 'PLACEMENT') {
-                 newMessage += ` (Place ${newGoatsPlaced + 1}/${TOTAL_GOATS})`;
-            }
+            newMessage = nextTurn === config.playerRole ? "Your Turn" : "CPU Thinking...";
         }
     }
 
@@ -256,7 +234,7 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
         phase: nextPhase,
         selectedPiece: null,
         message: newMessage,
-        history: [...prev.history, historySnapshot], // Push snapshot
+        history: [...prev.history, historySnapshot],
         undoCount: prev.undoCount 
     }));
   };
@@ -270,70 +248,75 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
         winner: null,
         phase: 'PLACEMENT',
         selectedPiece: null,
-        message: config.gameMode === 'PVP' 
-            ? 'Place a Goat to start' 
-            : (config.playerRole === 'GOAT' ? 'Place a Goat to start' : 'AI is placing...'),
+        message: 'Place a Goat to start',
         history: [],
         undoCount: getUndoLimit(config.difficulty),
     });
   };
 
-  useEffect(() => {
-     if (config.gameMode === 'AI' && gameState.goatsPlaced === 0 && gameState.turn === 'GOAT' && config.playerRole === 'TIGER' && !winner && !isAiThinking) {
-        // AI Effect handles this
-     }
-  }, []);
-
   const currentValidMoves = selectedPiece ? getValidMovesForSelection(selectedPiece) : [];
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-start p-4 bg-gray-100 dark:bg-gray-900 overflow-y-auto">
+    <div className="w-full h-full min-h-screen flex flex-col items-center bg-gray-100 dark:bg-gray-900 overflow-y-auto px-4 py-8">
       
       {/* Header */}
-      <div className="w-full max-w-[500px] flex justify-between items-center mb-4">
-         <button onClick={onBack} className="px-4 py-2 bg-gray-300 dark:bg-gray-700 rounded-lg font-bold text-sm">
-            Exit
+      <div className="w-full max-w-md flex justify-between items-center mb-6 z-10">
+         <button onClick={onBack} className="w-10 h-10 flex items-center justify-center bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 active:scale-95 transition-all">
+            <span className="text-lg">←</span>
          </button>
          <div className="flex flex-col items-center">
-             <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Bagh Chaal</h2>
-             <span className="text-xs text-gray-500 uppercase">{config.gameMode === 'PVP' ? '2 Player' : `${config.difficulty} Mode`}</span>
+             <h2 className="text-xl font-black text-gray-800 dark:text-gray-100 uppercase tracking-widest">Arena</h2>
+             <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">{config.gameMode === 'PVP' ? 'Local PVP' : `${config.difficulty} CPU`}</span>
          </div>
-         <button onClick={restartGame} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold text-sm">
-            Restart
+         <button onClick={restartGame} className="w-10 h-10 flex items-center justify-center bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 active:scale-95 transition-all">
+            <span className="text-lg">↺</span>
          </button>
       </div>
 
-      {/* Stats Bar */}
-      <div className="w-full max-w-[500px] flex justify-between bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md mb-6 border dark:border-gray-700">
-         <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-widest">Captured</span>
-            <div className="text-2xl font-black text-red-500">{goatsCaptured} / {winCaptureCount}</div>
-         </div>
-         <div className="flex flex-col items-center justify-center">
-            <div className={`px-4 py-1 rounded-full text-sm font-bold ${turn === 'TIGER' ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-700'}`}>
-                {winner ? 'GAME OVER' : (turn === 'TIGER' ? 'TIGER TURN' : 'GOAT TURN')}
+      {/* Stats Board */}
+      <div className="w-full max-w-md bg-white dark:bg-gray-800 p-6 rounded-[2rem] shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col space-y-4 mb-6 z-10">
+         <div className="flex justify-between items-center px-2">
+            <div className="flex flex-col">
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Casualties</span>
+                <div className="flex items-center space-x-1">
+                    <span className="text-2xl font-black text-red-500">{goatsCaptured}</span>
+                    <span className="text-xs text-gray-400 font-bold">/ {winCaptureCount}</span>
+                </div>
             </div>
-            {phase === 'PLACEMENT' && !winner && <span className="text-xs mt-1 text-gray-500">Placing {goatsPlaced}/{TOTAL_GOATS}</span>}
+            <div className="flex flex-col items-end">
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Herd Size</span>
+                <div className="flex items-center space-x-1">
+                    <span className="text-2xl font-black text-gray-800 dark:text-gray-100">{goatsPlaced - goatsCaptured}</span>
+                    <span className="text-xs text-gray-400 font-bold">In Play</span>
+                </div>
+            </div>
          </div>
-         <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-widest">In Play</span>
-            <div className="text-2xl font-black text-gray-700 dark:text-gray-200">{goatsPlaced - goatsCaptured}</div>
+
+         <div className="h-px bg-gray-100 dark:bg-gray-700 w-full" />
+
+         <div className="flex justify-between items-center px-2">
+            <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${turn === 'TIGER' ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+                {winner ? 'Over' : 'Tiger'}
+            </div>
+            <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${turn === 'GOAT' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+                {winner ? 'Over' : 'Sheep'}
+            </div>
          </div>
       </div>
 
-      {/* Info Message & Undo */}
-      <div className="w-full max-w-[500px] flex justify-between items-center mb-4">
-        <div className={`text-lg font-semibold animate-pulse ${winner ? (winner === 'TIGER' ? 'text-red-500' : 'text-green-500') : 'text-gray-600 dark:text-gray-300'}`}>
+      {/* Status & Actions */}
+      <div className="w-full max-w-md flex justify-between items-center mb-6 z-10 px-2">
+        <p className={`text-sm font-black uppercase tracking-widest ${winner ? 'text-blue-500 animate-pulse' : 'text-gray-500 dark:text-gray-400'}`}>
             {message}
-        </div>
+        </p>
         {config.gameMode === 'PVP' && !winner && (
             <button 
                 onClick={handleUndo} 
                 disabled={undoCount <= 0 || history.length === 0}
-                className={`px-3 py-1 text-xs font-bold rounded-full border transition-all ${
+                className={`px-4 py-2 text-[10px] font-black rounded-xl border transition-all uppercase tracking-widest ${
                     undoCount > 0 && history.length > 0
-                    ? 'border-yellow-500 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20' 
-                    : 'border-gray-300 text-gray-400 cursor-not-allowed'
+                    ? 'border-orange-400 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/10' 
+                    : 'border-gray-200 text-gray-300 cursor-not-allowed'
                 }`}
             >
                 Undo ({undoCount})
@@ -342,58 +325,60 @@ const Game: React.FC<GameProps> = ({ onBack, config, onGameEnd }) => {
       </div>
 
       {/* Board */}
-      <div className="relative">
+      <div className="w-full flex-grow flex items-center justify-center relative z-10 max-h-[60vh]">
         <Board 
             board={board} 
             validMoves={currentValidMoves} 
             selectedPiece={selectedPiece}
             onCellClick={handleCellClick}
         />
+        
         {isAiThinking && !winner && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/10 rounded-xl backdrop-blur-[1px]">
-                <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-full shadow-xl flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-                    <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                    <span className="text-sm font-bold text-gray-700 dark:text-gray-200 ml-2">Thinking</span>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md px-6 py-4 rounded-3xl shadow-2xl flex items-center space-x-4 border border-white/20">
+                    <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                    </div>
+                    <span className="text-xs font-black text-gray-800 dark:text-gray-100 uppercase tracking-widest">CPU Thinking</span>
                 </div>
             </div>
         )}
       </div>
 
-      {!winner && (
-        <div className="mt-8 text-center text-sm text-gray-400 max-w-sm">
-            {turn === 'TIGER' 
-                ? "Tigers can jump over Goats to capture them." 
-                : (phase === 'PLACEMENT' ? "Place Goats on empty intersections." : "Move Goats to adjacent spots to block Tigers.")}
-        </div>
-      )}
-
-      {/* Win Modal Overlay */}
+      {/* Win Modal */}
       {winner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-2xl flex flex-col items-center animate-bounce">
-                <h3 className="text-3xl font-black mb-2 text-gray-900 dark:text-white">
-                    {winner === 'TIGER' ? 'TIGERS WIN!' : 'GOATS WIN!'}
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/80 backdrop-blur-xl p-6 animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col items-center w-full max-w-sm border border-white/10">
+                <div className="text-6xl mb-6 transform hover:scale-110 transition-transform cursor-default">
+                    {winner === 'TIGER' ? '🐯' : '🐑'}
+                </div>
+                <h3 className="text-3xl font-black mb-2 text-gray-900 dark:text-white uppercase tracking-tighter">
+                    {winner === 'TIGER' ? 'Tigers Rule' : 'Goats Rule'}
                 </h3>
-                <p className="mb-6 text-gray-600 dark:text-gray-300 text-center">
-                    {winner === 'TIGER' ? 'The herd has been decimated.' : 'The predators are trapped.'}
-                    {config.gameMode === 'AI' && winner === config.playerRole && (
-                        <span className="block mt-2 font-bold text-blue-500">
-                             +{calculateExpGain(config.difficulty, 'WIN')} EXP
-                        </span>
-                    )}
-                    {config.gameMode === 'AI' && winner !== config.playerRole && (
-                        <span className="block mt-2 font-bold text-gray-400">
-                             +10 EXP (Participation)
+                <p className="mb-8 text-sm text-gray-500 dark:text-gray-400 font-medium text-center uppercase tracking-widest">
+                    {winner === 'TIGER' ? 'Predators have feasted.' : 'Clever blocking traps them.'}
+                    {config.gameMode === 'AI' && (
+                        <span className={`block mt-4 font-black text-lg ${winner === config.playerRole ? 'text-blue-500' : 'text-red-400'}`}>
+                            {winner === config.playerRole 
+                                ? `+${calculateExpGain(config.difficulty, 'WIN', config.playerRole)} EXP` 
+                                : `+0 EXP`
+                            }
                         </span>
                     )}
                 </p>
                 <button 
                     onClick={restartGame}
-                    className="px-8 py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl shadow-lg"
+                    className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl shadow-xl transition-all active:scale-95 uppercase tracking-widest text-sm"
                 >
-                    Play Again
+                    Rematch
+                </button>
+                <button 
+                    onClick={onBack}
+                    className="w-full mt-3 py-4 text-gray-400 dark:text-gray-500 font-bold hover:text-gray-600 transition-colors uppercase text-[10px] tracking-[0.3em]"
+                >
+                    Main Menu
                 </button>
             </div>
         </div>
